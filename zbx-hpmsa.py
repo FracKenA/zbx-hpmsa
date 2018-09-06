@@ -127,7 +127,7 @@ def get_skey(storage, hashed_login, use_cache=True):
     else:
         # Forming URL and trying to make GET query
         login_url = '{strg}/api/login/{hash}'.format(strg=storage, hash=hashed_login)
-        ret_code, sessionkey, xml = query_xmlapi(url=login_url, sessionkey=None)
+        ret_code, sessionkey, xml = query_xmlapi(url=login_url, sessionkey="")
 
         # 1 - success, write sessionkey to DB and return it
         if ret_code == '1':
@@ -191,19 +191,26 @@ def query_xmlapi(url, sessionkey):
     try:
         # Connection timeout in seconds (connection, read).
         timeout = (1, 3)
-        # Headers for newer MSA and cookies for old MSA model
-        headers = {'sessionKey': sessionkey}
-        cookies = {'wbisessionkey': sessionkey, 'wbiusername': MSA_USERNAME}
-        if USE_HTTPS:  # https
-            url = 'https://' + url
+        full_url = 'https://' + url if USE_HTTPS else 'http://' + url
+        session = requests.Session()
+        req = requests.Request('GET', full_url)
+        if not OLD_API:
+            headers = {'sessionKey': sessionkey}
+        else:
+            headers = {'Cookie': "wbiusername={}; wbisessionkey={}".format(MSA_USERNAME, sessionkey)}
+
+        # Update request headers
+        req.headers.update(headers)
+        if USE_HTTPS:
             if VERIFY_SSL:
-                response = requests.get(url, headers=headers, cookies=cookies, verify=ca_file, timeout=timeout)
+                response = session.send(req.prepare(), timeout=timeout, verify=ca_file)
             else:
                 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                response = requests.get(url, headers=headers, cookies=cookies, verify=False, timeout=timeout)
-        else:  # http
-            url = 'http://' + url
-            response = requests.get(url, headers=headers, cookies=cookies, timeout=timeout)
+                response = session.send(req.prepare(), timeout=timeout, verify=False)
+        else:
+            response = session.send(req.prepare(), timeout=timeout)
+        # Close session
+        session.close()
     except requests.exceptions.SSLError:
         raise SystemExit('ERROR: Cannot verify storage SSL Certificate.')
     except requests.exceptions.ConnectTimeout:
@@ -686,7 +693,7 @@ def get_full_json(storage, component, sessionkey):
 
 if __name__ == '__main__':
     # Current program version
-    VERSION = '0.5.6'
+    VERSION = '0.5.7beta1'
 
     # Parse all given arguments
     parser = ArgumentParser(description='Zabbix script for HP MSA XML API.', add_help=True)
@@ -707,6 +714,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--save-xml', type=str, nargs=1, help='Save response from storage as XML file')
     parser.add_argument('--show-cache', action='store_true', help='Display cache data')
     parser.add_argument('--https', type=str, choices=('direct', 'verify'), help='Use https instead http')
+    parser.add_argument('--old-api', action='store_true', help='Compatibility mode with old XML API version')
     args = parser.parse_args()
 
     # Make no possible to use '--lld' and '--get' options together
@@ -764,6 +772,7 @@ if __name__ == '__main__':
     SAVE_XML = args.save_xml
     USE_HTTPS = args.https in ('direct', 'verify')
     VERIFY_SSL = args.https == 'verify'
+    OLD_API = args.old_api
     # Set msa_connect - IP or DNS name and determine to use https or not
     MSA_CONNECT = args.msa if VERIFY_SSL else gethostbyname(args.msa)
 
