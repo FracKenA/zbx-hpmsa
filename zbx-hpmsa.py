@@ -131,7 +131,7 @@ def get_skey(storage, hashed_login, use_cache=True):
 
         # 1 - success, write sessionkey to DB and return it
         if ret_code == '1':
-            expired_time = datetime.timestamp(datetime.utcnow() + timedelta(minutes=15))
+            expired_time = datetime.timestamp(datetime.utcnow() + timedelta(hours=12))
             if not USE_HTTPS:  # http
                 if sql_cmd('SELECT ip FROM skey_cache WHERE ip = "{}" AND proto="http"'.format(storage)) is None:
                     sql_cmd('INSERT INTO skey_cache VALUES ('
